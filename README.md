@@ -57,12 +57,11 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
     - [ ] multi-scale pooling mechanism
     - [ ] multi-scale output layer
     - [ ] multi-scale cosine similarity loss function
-    - [ ] cross-attention mechanism
+    - [x] cross-attention mechanism
     - [ ] edit `generate()` function to pass through future predictions
     - [ ] create alternative options for 
-        - [ ] pooling mechanisms (sum, max, plus, linear, norm, etc)
+        - [x] pooling mechanisms (sum, max, plus, linear, norm, etc)
         - [ ] output layer (simple linear, MLP, or full transformer layer)
-        - [ ] mask out cross-attention to pool of 2nd & 3rd token?
         - [ ] add MSE & MAE to loss function
 - [ ] train model(s)
 
