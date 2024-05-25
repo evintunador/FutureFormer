@@ -13,7 +13,7 @@ def precompute_freqs_cis(dim: int, end: int, theta: float = 10_000.0):
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
 
-class MQA(LoggingModule): # multi-query self-attention https://arxiv.org/abs/1911.02150
+class selfMQA(LoggingModule): # multi-query self-attention https://arxiv.org/abs/1911.02150
     def __init__(
         self, 
         dim: int,

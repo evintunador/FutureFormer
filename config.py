@@ -6,16 +6,16 @@ import time
 @dataclass
 class ModelConfig:
     """
-    Design your GPT here
+    Design your FutureFormer here
     Yes I know dropout_rate should probably be in TrainConfig but it was easier to implement from here
     """
     # general hyperparameters
-    dim: int = 192
+    dim: int = 128
     device: str = 'cuda' if torch.cuda.is_available() else 'cpu' # can't do MPS bc metal doesn't support complex64 used in RoPE
     dropout_rate = 0.1 # percent of neurons to set to 0 during training as a way of adding randomness & improving generalization
 
     # tokenizer
-    tokenizer: str = 'bpe_v2' # must choose from one of the folders in 'tokenizers/'. current options: 'bpe_v1', 'bpe_v2'
+    tokenizer: str = 'bpe_v1' # must choose from one of the folders in 'tokenizers/'. current options: 'bpe_v1', 'bpe_v2'
     vocab_len: int = 8192 # options assuming 'bpe' are 95 (character-wise), 128, 256, 512, 1024, 2048, 4096, & 8192
     # ^ that number does not include the three tokens bos, eos, and pad
 
@@ -35,7 +35,7 @@ class ModelConfig:
     num_kv_heads: int = 1 # set =num_q_heads to revert to regular multi-head attention (not recommended)
     head_dim: int = dim // num_q_heads # most common choices are 32, 64 and especially 128 bc those are what works with FlashAttention
     theta: float = 10_000 # 10_000 is the most common choice. Llama3 uses 50_000
-    max_seq_len: int = 512 # 512 is the most my 8gb of ram can handle
+    max_seq_len: int = 64 # 512 is the most my 8gb of ram can handle
 
     # normalization
     scale_first_resid: bool = True # whether to multiply the first residual state by sqrt(dim)
@@ -58,12 +58,12 @@ class TrainConfig:
     model_name = f'{time.strftime("%Y-%m-%d|%H-%M-%S")}' # defaults to the time that config.py was imported
     
     weight_decay: float = 0.05
-    batch_size: int = 24
+    batch_size: int = 32
     
     # total number of batches to run over the course of training
-    max_iters: int = 6_000 # i recommend at least 1_000
+    max_iters: int = 20 # i recommend at least 1_000
     # how often to print out an update on how training is going
-    eval_interval: int = max_iters // 100 # doing this too often slows things down hella but also gives detailed log data
+    eval_interval: int = max_iters // 10 # doing this too often slows things down hella but also gives detailed log data
     # how many samples to take at each evaluation. more means a more accurate loss/perplexity calculation
     eval_samples: int = 1 # this number can slow things down. each sample is almost like doing an extra training iteration
     # how often to save a model checkpoint

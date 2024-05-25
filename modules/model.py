@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from modules.logging import LoggingModule, log_io
 from modules.norm import Norm
-from modules.mqa import precompute_freqs_cis
+from modules.self_mqa import precompute_freqs_cis
 from modules.layer import Layer
 
 class Model(LoggingModule):
@@ -42,7 +42,8 @@ class Model(LoggingModule):
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer('mask', mask)
 
-        self.criterion = nn.CrossEntropyLoss(ignore_index = self.vocab_len - 1) # ignore the padding token
+        self.ff_criterion = nn.BCEWithLogitsLoss() # i guess the padding token vector is actually going to be useful
+        self.ntp_criterion = nn.CrossEntropyLoss(ignore_index = self.vocab_len - 1) # ignore the padding token
 
     @log_io
     def forward(
@@ -74,18 +75,13 @@ class Model(LoggingModule):
         # initialize first residual state and run the model
         x = self.token_embedder(input_token_ids) * self.scale # [batch_size, seq_len, dim]
         for layer in self.layers:
-            x = layer(
-                x, 
-                freqs_cis, 
-                mask, 
-                cache_len,
-                training,
-            )
+            x, c = layer(x, c, freqs_cis, mask, cache_len,training)
+            
         x = self.final_norm(x)
         logits = x @ self.token_embedder.weight.t() # [batch_size, seq_len, vocab_len]
 
         if training:
-            loss = self.criterion(
+            loss = self.ntp_criterion(
                 logits.view(batch_size * seq_len, self.vocab_len),
                 target_token_ids.reshape(batch_size * seq_len)
             )

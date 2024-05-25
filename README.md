@@ -67,6 +67,7 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 - [ ] train model(s)
 
 ### potential future TODOs
+- [ ] can I get one single module that does both self and cross attention? I think i saw that in a diffusion paper, not sure if it makes sense here
 - [ ] write a paper IF it works?
 
 ## how to contribute
