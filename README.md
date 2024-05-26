@@ -67,7 +67,9 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 
 ### potential future TODOs
 - [ ] can I get one single module that does both self and cross attention? I think i saw that in a diffusion paper, not sure if it makes sense here
-- [ ] write a paper IF it works?
+- [ ] some kind of positional encoding in the cross-attention module?
+- [ ] should i set cross-attention hyperparameters different from self-attention? fewer heads?
+- [ ] for the pooling mechanisms it might be smart to find more ways to reduce parameter counts by weight tying. for example, instead of creating many separate pooling modules we can just create one pooling module capable of handling the max length and then when lesser lengths go in they just don't use the entire module. however those earlier weight matrices would now have to very different tasks, some involving compression of a few near term tokens and some of many far term tokens, which i don't think would be conducive to a good learning environment, so maybe drop the idea?
 
 ## how to contribute
 Other than the above TODO lists, appreciated contributions include:

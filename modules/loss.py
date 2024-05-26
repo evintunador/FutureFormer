@@ -4,13 +4,15 @@ import torch.nn.functional as F
 
 from modules.logging import LoggingModule, log_io
 
-def splice_future_indices(target_tokens, padding_token):
+def splice_future_indices(target_tokens, padding_token, mult_factor, max_iter):
     batch_size, max_seq_len = target_tokens.size()
     matrices = []
 
-    # Length starts from 2 and doubles each iteration
-    length = 2
-    while length <= max_seq_len:
+    length = mult_factor
+    tot_length = 1 + length 
+    j = 0
+
+    while (tot_length <= max_seq_len) and (j < max_iter):
         matrix = []
         for i in range(max_seq_len):
             subseq = target_tokens[:, i+1:i+1+length]  # slice the target tokens
@@ -23,7 +25,10 @@ def splice_future_indices(target_tokens, padding_token):
             matrix.append(subseq)
         
         matrices.append(torch.stack(matrix, dim=1))
-        length *= 2
+        
+        length *= mult_factor
+        tot_length += length
+        j += 1
 
     return matrices
     

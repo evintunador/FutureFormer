@@ -17,25 +17,30 @@ class ModelConfig:
     # tokenizer
     tokenizer: str = 'bpe_v1' # must choose from one of the folders in 'tokenizers/'. current options: 'bpe_v1', 'bpe_v2'
     vocab_len: int = 8192 # options assuming 'bpe' are 95 (character-wise), 128, 256, 512, 1024, 2048, 4096, & 8192
-    # ^ that number does not include the three tokens bos, eos, and pad
+        # ^ that number does not include the three tokens bos, eos, and pad
 
     # Residual Layers
     num_layers: int = 6 # small models should err on the side of many many layers at the expense of attention & mlp sizes
     second_resid_norm: bool = False # True adds an extra Norm after the attn & MLP, like in Grok. Only recommended if using RMSNorm
     
     # Multi-Layer Perceptrion
-    mlp_hidden_mult: int = 4 # how wide the hidden dimension of the MLP should be. if mlp_gated = True that's not quite the correct description but whatever
+    mlp_hidden_mult: int = 4 # how wide the hidden dimension of the MLP should be. common range is 2 to 8, usually 4
     mlp_bias: bool = False # whether to use bias weights. Llama3 does not and I'm partial to their choice
     mlp_nonlinearity: str = 'SiLU' # options are 'GeLU', 'SiLU', and 'ReLU'(not recommended)
     mlp_gated: bool = True # Turns SiLU into SwiGLU, GeLU into GeGLU, etc
-    # ^ if gated == True, mlp_hidden_mult will automatically adjust to maintain parameter count
+        # ^ if gated == True, mlp_hidden_mult will automatically adjust to maintain parameter count
 
-    # Multi-Query Attention
+    # Self-Attention
     num_q_heads: int = 2 # `num_q_heads % num_kv_heads == 0` must be true
     num_kv_heads: int = 1 # set =num_q_heads to revert to regular multi-head attention (not recommended)
     head_dim: int = dim // num_q_heads # most common choices are 32, 64 and especially 128 bc those are what works with FlashAttention
     theta: float = 10_000 # 10_000 is the most common choice. Llama3 uses 50_000
     max_seq_len: int = 64 # 512 is the most my 8gb of ram can handle
+
+    # Cross-Attention
+    ca_num_q_heads: int = num_q_heads # is it worth messing around with cross-attention's parameters?
+    ca_num_kv_heads: int = num_kv_heads
+    ca_head_dim: int = dim // ca_num_q_heads
 
     # normalization
     scale_first_resid: bool = True # whether to multiply the first residual state by sqrt(dim)
@@ -43,6 +48,32 @@ class ModelConfig:
     norm_affine: bool = True # whether to use a linear layer after each norm. recommended especially if you're using LayerNorm or CosineNorm
     norm_bias: bool = True # whether to add a bias to the linear layer after each norm. doesn't do anything if norm_affine == False
     eps: float = 1e-6 # small constant to prevent division by 0. Not really worth editing
+
+    # Pooling Operation
+    pool_type: str = 'sum' # options are 'sum', 'max', 'parametric_sum', 'parametric_max', 'flatten', 'conv', 'attention', 'self_attention'
+        # 'sum' and 'max' have no learnable parameters and will ignore compress_freq, compress_freq_n, and pool_output_layer
+        # 'flatten' will ignore pool_output_layer
+    pre_pool_norm: bool = True # whether to norm embedding vectors before pooling. 
+        # they do always get normed after pooling. the characteristics of the norms are defined above under # normalization
+    pool_output_linear: bool = False # 
+    compress_freq: str = 'linear' # options are 'constant', 'linear', 'root', 'log', and 'poly'
+    compress_freq_n: int = 1 # defines compress_freq. below are recommended values & explanations
+        # (compress_freq=='constant')&(compress_freq_n==1) -> y=n
+            # for n=1, everyy block gets compressed into one single embedding vector
+        # (compress_freq=='linear')&(compress_freq_n==1) -> y=nx+1
+            # for n=1, 1st block gets 1 vector, 2nd gets 2, 3rd gets 3, etc 
+        # (compress_freq=='root')&(compress_freq_n==2) -> y=floor(x**(1/n))
+            # for n=2, 1st thru 3rd blocks get 1 vector, 4th thru 8th get 2, 9th thru 15th get 3, etc
+        # (compress_freq=='log')&(compress_freq_n==2) -> y=floor(log_n(x))
+            # for n=2, 1st gets 1 vector, 2nd thru 8th get 2, 9th thru 15th get 3, etc 
+        # (compress_freq=='poly')&(compress_freq_n==1.2) -> y=x**n
+            # for n=2, 1st gets 1 vector, 2nd gets 2, 3rd gets 3, 4th gets 5, 5th gets 7, 6th gets 9, etc 
+
+    # Future Sight
+    fs_mult_factor: int = 4 # sequence length of first set of future vectors to be pooled & the mult factor of each successive larger future time chunk
+    fs_max_iter: int = 3 # maximum number of future chunks to look at
+        # for fs_mult_factor=2 and fs_max_iter=6, we've got chunk sizes 2,4,8,16,32,64 for a total of 126 future-sight tokens
+    assert max_seq_len >= sum([fs_mult_factor**i for i in range(fs_max_iter)]), f'future sight prediction chunks cannot be longer than max_seq_len'
 
     # inference (kv caching)
     max_batch_size: int = 1 # i haven't tried changing this from 1

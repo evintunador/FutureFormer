@@ -10,24 +10,23 @@ class crossMQA(LoggingModule): # multi-query cross-attention
     def __init__(
         self, 
         dim: int,
-        head_dim: int,
-        num_q_heads: int, # at some point it'll prolly make sense to give this fewer heads
-        num_kv_heads: int,
-        max_seq_len: int,
+        ca_head_dim: int,
+        ca_num_q_heads: int, # at some point it'll prolly make sense to give this fewer heads
+        ca_num_kv_heads: int,
         dropout_rate: float = 0.1,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
     ):
         super().__init__()
-        self.num_q_heads = num_q_heads
-        self.num_kv_heads = num_q_heads if num_kv_heads is None else num_kv_heads
-        assert num_q_heads % num_kv_heads == 0, f'num_q_heads must be divisible by num_kv_heads'
-        self.head_dim = dim // num_q_heads if head_dim is None else head_dim
+        self.num_q_heads = ca_num_q_heads
+        self.num_kv_heads = ca_num_q_heads if ca_num_kv_heads is None else ca_num_kv_heads
+        assert ca_num_q_heads % ca_num_kv_heads == 0, f'num_q_heads must be divisible by num_kv_heads'
+        self.head_dim = dim // ca_num_q_heads if ca_head_dim is None else ca_head_dim
         self.dropout_rate = dropout_rate
 
-        self.Wq = nn.Linear(dim, num_q_heads * head_dim, bias=False)
-        self.Wk = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False)
-        self.Wv = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False)
-        self.Wo = nn.Linear(num_q_heads * head_dim, dim, bias=False)
+        self.Wq = nn.Linear(dim, self.num_q_heads * self.head_dim, bias=False)
+        self.Wk = nn.Linear(dim, self.num_kv_heads * self.head_dim, bias=False)
+        self.Wv = nn.Linear(dim, self.num_kv_heads * self.head_dim, bias=False)
+        self.Wo = nn.Linear(self.num_q_heads * self.head_dim, dim, bias=False)
     
     @log_io
     def forward(

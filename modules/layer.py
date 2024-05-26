@@ -35,10 +35,9 @@ class Layer(LoggingModule):
         self.pre_cross_attn_norm = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
         self.cross_attn = crossMQA(
             cfg.dim,
-            cfg.head_dim,
-            cfg.num_q_heads,
-            cfg.num_kv_heads,
-            cfg.max_seq_len,
+            cfg.ca_head_dim,
+            cfg.ca_num_q_heads,
+            cfg.ca_num_kv_heads,
             cfg.dropout_rate,
             cfg.device
         )
@@ -65,9 +64,9 @@ class Layer(LoggingModule):
     def forward(
         self,
         x: torch.Tensor,
-        c: torch.Tensor,
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
+        c: torch.Tensor = None,
         cache_len: int = None,
         training = False,
     ) -> torch.Tensor:
