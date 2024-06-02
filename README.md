@@ -53,6 +53,11 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 - `train.py`: functions for training a model, used in `train.ipynb`
 
 ## definite eventual TODOs
+- [ ] stuff from my actual todo list that might be duplicates of what's below
+	- [ ] training function
+	- [ ] setup furthest out output first and then each further layer adds a closer in time period
+	- [ ] make pooling choosable thru config
+	- [ ] connect pooling with cross-attention inside model
 - [ ] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. Not sure if this can be doen with a simple linear or MLP at the end of the final residual state, or if it's gonna have to be off-set by some number of layers or something. 
     - [ ] multi-scale pooling mechanism
     - [ ] multi-scale output layer
