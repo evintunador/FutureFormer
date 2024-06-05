@@ -11,7 +11,7 @@ class crossMQA(LoggingModule): # multi-query cross-attention
         self, 
         dim: int,
         ca_head_dim: int,
-        ca_num_q_heads: int, # at some point it'll prolly make sense to give this fewer heads
+        ca_num_q_heads: int, # at some point it'll prolly make sense to give this fewer heads than the self-attention
         ca_num_kv_heads: int,
         dropout_rate: float = 0.1,
         device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -31,9 +31,8 @@ class crossMQA(LoggingModule): # multi-query cross-attention
     @log_io
     def forward(
         self,
-        x: torch.Tensor,
-        c: torch.Tensor,
-        freqs_cis: torch.Tensor,
+        x: torch.Tensor, # (batch_size, seq_len, dim)
+        c: torch.Tensor, # batch_size, pool_output_len, dim)
         training: bool = False,
     ) -> torch.Tensor:
         batch_size, seq_len_x, _ = x.shape
@@ -45,14 +44,6 @@ class crossMQA(LoggingModule): # multi-query cross-attention
         xq = xq.view(batch_size, seq_len, self.num_q_heads, self.head_dim)
         ck = ck.view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
         cv = cv.view(batch_size, seq_len, self.num_kv_heads, self.head_dim)
-
-        xq, ck = self.apply_rotary_emb(xq, ck, freqs_cis)
-        ### if that ^ doesn't work, take a look at this old code from next-concept predictor v11.3
-        #if self.use_RoPE:
-            #expand = input_len_x // input_len_c
-            #ck = ck.repeat_interleave(expand, dim=1) 
-            #cv = cv.repeat_interleave(expand, dim=1) # cv need to be expanded for their use later on if we do this
-            #xq, ck = self.RoPE(xq, ck)
 
         # adjusts ck and cv to match the query heads count.
         if self.num_kv_heads != self.num_q_heads:
@@ -69,20 +60,6 @@ class crossMQA(LoggingModule): # multi-query cross-attention
         if training: output = F.dropout(output, self.dropout_rate)
         
         return output
-    
-    @log_io
-    def apply_rotary_emb(
-        self,
-        xq: torch.Tensor,
-        ck: torch.Tensor,
-        freqs_cis: torch.Tensor,
-    ) -> (torch.Tensor, torch.Tensor):
-        xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-        ck_ = torch.view_as_complex(ck.float().reshape(*ck.shape[:-1], -1, 2))
-        freqs_cis = self.reshape_for_broadcast(freqs_cis.to(xq.device), xq_)
-        xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
-        ck_out = torch.view_as_real(ck_ * freqs_cis).flatten(3)
-        return xq_out.type_as(xq), ck_out.type_as(ck)
 
     @log_io
     def reshape_for_broadcast(self, freqs_cis: torch.Tensor, x: torch.Tensor) -> torch.Tensor:

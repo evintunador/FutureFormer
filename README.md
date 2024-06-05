@@ -19,7 +19,7 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 10. This step could really go anywhere, but if you're trying to learn how transformers work then along with reading the code in `modules/` you can use `test_modules.ipynb` to visualize how the tensor shapes change.
 
 ## file structure
-- `old version 2024-05-24`: contains files from how the repo was before I refactors based on templateGPT and according to a new idea
+- `old version 2024-05-24`: contains files from how the repo was before I refactored based on templateGPT and according to a new idea
 - `modules/`: where all of the code for the actual model goes
     - `layer.py`: defines each residual connection layer of our GPT
     - `logging.py`: defines the `LoggingModule` class, a wrapper that you should use instead of pytorch's `nn.module` in order to facilitate easy demonstration of how tensor shapes change throughout a given module
@@ -53,12 +53,14 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 - `train.py`: functions for training a model, used in `train.ipynb`
 
 ## definite eventual TODOs
+- [ ] *figure out if i've got an information leak*
 - [ ] stuff from my actual todo list that might be duplicates of what's below
 	- [ ] training function
 	- [ ] setup furthest out output first and then each further layer adds a closer in time period
 	- [ ] make pooling choosable thru config
 	- [ ] connect pooling with cross-attention inside model
-- [ ] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. Not sure if this can be doen with a simple linear or MLP at the end of the final residual state, or if it's gonna have to be off-set by some number of layers or something. 
+- [ ] so the final output logit tensor shape (b,t,v) are pretty huge which is an issue in terms of ram. in [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737) they overcame this issue by messing with the optimizer to do the bulk shared part of the model together but each part of the parameters specific to a given output logit tensor on its own sequentially, however they've not open-sourced their code. i've either gotta take the ram hit, lower my vocabulary size, or figure out how to mess with the optimizer like they did
+- [ ] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. More specifically, the final layer does NTP and cross-attends to the pooled vector of 2nd & 3rd tokens, the second to last layer predicts the pooled vec of 2&3 by cross-attending to pool of 4thru7, etc. 
     - [ ] multi-scale pooling mechanism
     - [ ] multi-scale output layer
     - [ ] multi-scale cosine similarity loss function
@@ -66,7 +68,6 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
     - [ ] edit `generate()` function to pass through future predictions
     - [ ] create alternative options for 
         - [x] pooling mechanisms (sum, max, plus, linear, norm, etc)
-        - [ ] output layer (simple linear, MLP, or full transformer layer)
         - [ ] add MSE & MAE to loss function
 - [ ] train model(s)
 
@@ -91,3 +92,8 @@ Because I'm not super knowledgeable on how collaborating on git projects works a
 - guides on how to build miniature versions of popular models from scratch, with a hand-holding walkthrough of every single tensor operation: [minGemma](https://github.com/evintunador/minGemma), [minGrok](https://github.com/evintunador/minGrok), and [minLlama3](https://github.com/evintunador/minLlama3)
 - [my YouTube channel](https://www.youtube.com/@Tunadorable)
 - my [other links](https://linktr.ee/tunadorable)
+
+## potential citations
+- [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737): shows that predicting further into the future can help model performance. Notably, they found that it actually hurt until the model reached a critical point in size which means that i should probably not be dismayed if FutureFormer doesn't work at this absurdly small scale. also of note is how they pointed out that the final logit tensors (b,t,v) are really big so when you've got more then one suddenly you've gotta start thinking about ram. Their solution to this was to record & apply the gradient for each relevant final logit tensor & it's task-specific transformer layer sequentially while holding the parameters of the shared body of the model and then applying all of those all at once. this might make sense for me to do which would suck cuz it'd mean that i'd have to learn how to mess with optimizers which sounds like a lot of work. ugh this is annoying, tbh i'd likely just use a smaller vocab size for these initial experiments and then deal with it later. i wonder if they open-sourced their code on how they messed with their optimizer? 
+- [Language Reconstruction with Brain Predictive Coding from fMRI Data](https://arxiv.org/abs/2405.11597): They cited a couple papers i need to look into on *Predictive Coding Theory* which states that the human brain predicts out into the future past the next instant moment. In previous papers they put patients into an fMRI and have them listen to a story then run those fMRI scans through a transformer encoder-decoder to see if they can decode the speech heard by the human. In this paper they expanded that idea by adding a second encoder-decoder side network which had the job of predicting multiple time periods into the future instead of regular NTP and did in fact see benefits in performance. Notably like the above paper they found the same ideal future prediction time period of $n=4$ tokens; FutureFormer isn't working in terms of tokens but still it's interesting that their results matched up so well
+- Some paper I read recently (today is [[2024-06-04]]) mentioned that layers before the final were actually better at predicting further out time periods, which aligns very well with the plans here for FutureFormer. Not sure which paper though it might've been one of the above two

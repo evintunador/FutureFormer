@@ -28,11 +28,9 @@ class Norm(LoggingModule):
 
         # Mapping norm types to their respective methods
         self.norm_type = norm_type
-        self.norm_methods = {
-            "RMSNorm": self.RMSNorm,
-            "LayerNorm": self.LayerNorm,
-            "CosineNorm": self.CosineNorm,
-        }
+        self.norm_methods = {"RMSNorm": self.RMSNorm,
+                             "LayerNorm": self.LayerNorm,
+                             "CosineNorm": self.CosineNorm,}
         # Ensure the specified norm type exists, default to RMSNorm if not found
         if norm_type not in self.norm_methods:
             print(f'norm type {norm_type} not found. defaulting to RMSNorm')

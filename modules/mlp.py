@@ -10,7 +10,7 @@ class MLP(LoggingModule):
         input_dim: int,
         hidden_dim: int,
         output_dim: int,
-        nonlinearity: str = 'GeLU',
+        nonlinearity: str = 'SiLU',
         gated: bool = True,
         bias: bool = False, # i Stan Llama and set bias to false
         dropout_rate: float = 0.1,
@@ -25,15 +25,13 @@ class MLP(LoggingModule):
         self.Wdown = nn.Linear(hidden_dim, output_dim, bias)
 
         # Mapping norm types to their respective methods
-        self.nonlinearities = {
-            "GeLU": nn.GELU(),
-            "SiLU": nn.SiLU(),
-            "ReLU": nn.ReLU(),
-        }
+        self.nonlinearities = {"GeLU": nn.GELU(),
+                               "SiLU": nn.SiLU(),
+                               "ReLU": nn.ReLU(),}
         # Ensure the specified norm type exists, default to GeLU if not found
         if nonlinearity not in self.nonlinearities:
             self.nonlinearity = nn.SiLU
-            print(f'nonlinearity {nonlinearity} not found. defaulting to SiLU')
+            print(f'nonlinearity "{nonlinearity}" not found. defaulting to SiLU')
         else:
             self.nonlinearity = self.nonlinearities[nonlinearity]
         
