@@ -11,7 +11,7 @@ class MaxPooling(LoggingModule):
     @log_io
     def forward(self, x):
         # x: (batch_size, max_seq_len, to_be_pooled_seq_len, dim)
-        return torch.max(x, dim=2)[0]  # (batch_size, max_seq_len, dim)
+        return torch.max(x, dim=2)[0].unsqueeze(2)  # (batch_size, max_seq_len, 1, dim)
 
 
 class SumPooling(LoggingModule):
@@ -21,18 +21,18 @@ class SumPooling(LoggingModule):
     @log_io
     def forward(self, x):
         # x: (batch_size, max_seq_len, to_be_pooled_seq_len, dim)
-        return torch.sum(x, dim=2)  # (batch_size, max_seq_len, dim)
+        return torch.sum(x, dim=2).unsqueeze(2)  # (batch_size, max_seq_len, 1, dim)
 
 
 class ParametricMaxPooling(LoggingModule):
-    def __init__(self, dim, output_seq_len, use_output_linear=False):
+    def __init__(self, dim, output_seq_len, use_output_linear: bool = False, bias: bool = False):
         super().__init__()
         
         self.output_seq_len = output_seq_len
-        self.linears = nn.ModuleList([nn.Linear(dim, dim, bias=False) for _ in range(output_seq_len)])
+        self.linears = nn.ModuleList([nn.Linear(dim, dim, bias=bias) for _ in range(output_seq_len)])
         
         self.use_output_linear = use_output_linear
-        if use_output_linear: self.out = nn.Linear(dim, dim, bias=False)
+        if use_output_linear: self.out = nn.Linear(dim, dim, bias=bias)
 
     @log_io
     def forward(self, x):
@@ -44,14 +44,14 @@ class ParametricMaxPooling(LoggingModule):
 
 
 class ParametricSumPooling(LoggingModule):
-    def __init__(self, dim, output_seq_len, use_output_linear=False):
+    def __init__(self, dim, output_seq_len, use_output_linear: bool = False, bias: bool = False):
         super().__init__()
         
         self.output_seq_len = output_seq_len
-        self.linears = nn.ModuleList([nn.Linear(dim, dim, bias=False) for _ in range(output_seq_len)])
+        self.linears = nn.ModuleList([nn.Linear(dim, dim, bias=bias) for _ in range(output_seq_len)])
         
         self.use_output_linear = use_output_linear
-        if use_output_linear: self.out = nn.Linear(dim, dim, bias=False)
+        if use_output_linear: self.out = nn.Linear(dim, dim, bias=bias)
 
     @log_io
     def forward(self, x):
@@ -63,11 +63,11 @@ class ParametricSumPooling(LoggingModule):
 
 
 class FlattenProjectionPooling(LoggingModule):
-    def __init__(self, to_be_pooled_seq_len, dim, output_seq_len):
+    def __init__(self, to_be_pooled_seq_len, dim, output_seq_len, bias: bool = False):
         super().__init__()
         
         self.projections = nn.ModuleList([
-            nn.Linear(to_be_pooled_seq_len * dim, dim, bias=False) for _ in range(output_seq_len)
+            nn.Linear(to_be_pooled_seq_len * dim, dim, bias=bias) for _ in range(output_seq_len)
         ])
 
     @log_io
@@ -80,16 +80,16 @@ class FlattenProjectionPooling(LoggingModule):
 
 
 class ConvPooling(LoggingModule):
-    def __init__(self, to_be_pooled_seq_len, dim, output_seq_len, use_output_linear=False):
+    def __init__(self, to_be_pooled_seq_len, dim, output_seq_len, use_output_linear: bool = False, bias: bool = False):
         super().__init__()
         self.convs = nn.ModuleList([
-            nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=to_be_pooled_seq_len)
+            nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=to_be_pooled_seq_len, bias=bias)
             for _ in range(output_seq_len)
         ])
         self.output_seq_len = output_seq_len
         
         self.use_output_linear = use_output_linear
-        if use_output_linear: self.out = nn.Linear(dim, dim, bias=False)
+        if use_output_linear: self.out = nn.Linear(dim, dim, bias=bias)
 
     @log_io
     def forward(self, x):
@@ -106,13 +106,13 @@ class ConvPooling(LoggingModule):
 
 
 class AttentionPooling(LoggingModule):
-    def __init__(self, dim, output_seq_len, use_output_linear=False):
+    def __init__(self, dim, output_seq_len, use_output_linear: bool = False, bias: bool = False):
         super().__init__()
-        self.query = nn.Linear(dim, output_seq_len, bias=False)
+        self.query = nn.Linear(dim, output_seq_len, bias=bias)
         self.output_seq_len = output_seq_len
         
         self.use_output_linear = use_output_linear
-        if use_output_linear: self.out = nn.Linear(dim, dim, bias=False)
+        if use_output_linear: self.out = nn.Linear(dim, dim, bias=bias)
     
     @log_io
     def forward(self, x):
@@ -129,10 +129,10 @@ class AttentionPooling(LoggingModule):
         
 
 class SelfAttentionPooling(LoggingModule): # TODO: figure out how to make queries input-dependent
-    def __init__(self, dim, output_seq_len):
+    def __init__(self, dim, output_seq_len, bias: bool = False):
         super().__init__()
-        self.key = nn.Linear(dim, dim, bias=False)
-        self.value = nn.Linear(dim, dim, bias=False)
+        self.key = nn.Linear(dim, dim, bias=bias)
+        self.value = nn.Linear(dim, dim, bias=bias)
         self.output_queries = nn.Parameter(torch.randn(output_seq_len, dim))
         self.softmax = nn.Softmax(dim=2)
 

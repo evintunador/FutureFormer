@@ -53,29 +53,27 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 - `train.py`: functions for training a model, used in `train.ipynb`
 
 ## definite eventual TODOs
-- [ ] *figure out if i've got an information leak*
-- [ ] stuff from my actual todo list that might be duplicates of what's below
-	- [ ] training function
-	- [ ] setup furthest out output first and then each further layer adds a closer in time period
+- [ ] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. More specifically, the final layer does NTP and cross-attends to the pooled vector of 2nd & 3rd tokens, the second to last layer predicts the pooled vec of 2&3 by cross-attending to pool of 4thru7, etc.
+- [x] *figure out if i've got an information leak*
+    - [x] disable kv cache for certain self-attention layers to prevent info leak
+- [x] cross-attention mechanism
+    - [x] combine self-attention & cross-attention into one module
+- [x] pooling mechanisms (sum, max, plus, linear, norm, etc)
 	- [ ] make pooling choosable thru config
-	- [ ] connect pooling with cross-attention inside model
-- [ ] so the final output logit tensor shape (b,t,v) are pretty huge which is an issue in terms of ram. in [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737) they overcame this issue by messing with the optimizer to do the bulk shared part of the model together but each part of the parameters specific to a given output logit tensor on its own sequentially, however they've not open-sourced their code. i've either gotta take the ram hit, lower my vocabulary size, or figure out how to mess with the optimizer like they did
-- [ ] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. More specifically, the final layer does NTP and cross-attends to the pooled vector of 2nd & 3rd tokens, the second to last layer predicts the pooled vec of 2&3 by cross-attending to pool of 4thru7, etc. 
-    - [ ] multi-scale pooling mechanism
-    - [ ] multi-scale output layer
-    - [ ] multi-scale cosine similarity loss function
-    - [x] cross-attention mechanism
-    - [ ] edit `generate()` function to pass through future predictions
-    - [ ] create alternative options for 
-        - [x] pooling mechanisms (sum, max, plus, linear, norm, etc)
-        - [ ] add MSE & MAE to loss function
+    - [ ] figure out how to make queries in `SelfAttentionPooling` input-dependent
+    - [ ] it might be smart to find more ways to reduce parameter counts by weight tying. for example, instead of creating many separate pooling modules we can just create one pooling module capable of handling the max length and then when lesser lengths go in they just don't use the entire module. however those earlier weight matrices would now have to very different tasks, some involving compression of a few near term tokens and some of many far term tokens, which i don't think would be conducive to a good learning environment, so maybe drop the idea?
+- [ ] figure out BCELoss
+- [ ] forward.train function
+- [ ] forward.inference function
+- [ ] edit `generate()` function to pass through future predictions? or does this go into the main model?
 - [ ] train model(s)
 
 ### potential future TODOs
-- [ ] can I get one single module that does both self and cross attention? I think i saw that in a diffusion paper, not sure if it makes sense here
-- [ ] some kind of positional encoding in the cross-attention module?
 - [ ] should i set cross-attention hyperparameters different from self-attention? fewer heads?
-- [ ] for the pooling mechanisms it might be smart to find more ways to reduce parameter counts by weight tying. for example, instead of creating many separate pooling modules we can just create one pooling module capable of handling the max length and then when lesser lengths go in they just don't use the entire module. however those earlier weight matrices would now have to very different tasks, some involving compression of a few near term tokens and some of many far term tokens, which i don't think would be conducive to a good learning environment, so maybe drop the idea?
+- [ ] IF the first tests are somewhat successful
+    - [ ] so the final output logit tensor shape (b,t,v) are pretty huge which is an issue in terms of ram. in [Better & Faster Large Language Models via Multi-token Prediction](https://arxiv.org/abs/2404.19737) they overcame this issue by messing with the optimizer to do the bulk shared part of the model together but each part of the parameters specific to a given output logit tensor on its own sequentially, however they've not open-sourced their code. i've either gotta take the ram hit, lower my vocabulary size, or figure out how to mess with the optimizer like they did
+    - [ ] scale up & train on a friend's gaming pc
+    - [ ] write a paper?
 
 ## how to contribute
 Other than the above TODO lists, appreciated contributions include:

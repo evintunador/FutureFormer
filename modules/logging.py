@@ -38,15 +38,19 @@ def log_io(func):
                 print(f"{indent}Float '{name}': Value={item}")
             else:
                 print(f"{indent}Other-type '{name}': Type={type(item).__name__}, Value={item}")
+        
+        sig = inspect.signature(func)
+        bound_args = sig.bind(self, *args, **kwargs)
+        bound_args.apply_defaults()
 
         print(f"\n{'='*10}Entering {self.__class__.__name__}.{func.__name__}{'='*10}")
         print("Inputs:")
-        arg_names = inspect.getfullargspec(func).args[1:]  # Excluding 'self'
-        arg_values = args + tuple(kwargs.values())
-        for name, value in zip(arg_names, arg_values):
-            log_item(value, name)
+        for name, value in bound_args.arguments.items():
+            if name != 'self':
+                log_item(value, name)
 
         result = func(self, *args, **kwargs)
+        
         print("\nOutputs:")
         if isinstance(result, tuple):
             log_item(result, "output", is_root=True)

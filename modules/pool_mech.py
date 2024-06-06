@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from modules.pool_operations import *
+import math
 
 class CompressionSchedule:
     def __init__(self, compress_freq, compress_freq_n):
