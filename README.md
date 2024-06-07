@@ -4,7 +4,7 @@
 
 This model is designed as a kind of expansion upon next-token prediction that encourages the model to think about what it wants to output further into the future of the sequence at lower & lower resolutions as the prediction gets further out, and then attend to its thoughts about the future when generating the next token. Hopefully this is kind of allowing the model to plan ahead in a way
 
-This repo is built off of [templateGPT](https://github.com/evintunador/templateGPT) and part of a larger project of mine called [micro_model_sandbox]() that's basically a hub for all the novel model experiments I do, with the goal of facilitating easy comparison between the different models. Basically for each of those experiments I just use this very repo as a template to start editing, and then once I'm happy with the project (or if I've just abandoned it but it's moderately functional) I add it to the sandbox.
+This repo is built off of [templateGPT](https://github.com/evintunador/templateGPT) and part of a larger project of mine called [micro_model_sandbox]() that's basically a hub for all the novel model experiments I do, with the goal of facilitating easy comparison between the different models. Basically for each of those experiments I just use this very repo as a template to start editing, and then once I'm happy with the project (or if I've just abandoned it but it's moderately functional) I add it to the sandbox
 
 ## getting started
 1. clone the repository
@@ -53,19 +53,22 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 - `train.py`: functions for training a model, used in `train.ipynb`
 
 ## definite eventual TODOs
-- [ ] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. More specifically, the final layer does NTP and cross-attends to the pooled vector of 2nd & 3rd tokens, the second to last layer predicts the pooled vec of 2&3 by cross-attending to pool of 4thru7, etc.
+- [ ] run through all files looking for more TODOs
+- [x] build out according to the new idea. basically instead of next-token prediction, I want the model to predict the next token, then a vector that is a pooled combination of the 2nd and 3rd tokens, then a vector that's pooled from 4th through 7th, then for 8th through 15th, etc. It does this for every time period, and we let it cross-attend to its previous far-into-the-future predictions. More specifically, the final layer does NTP and cross-attends to the pooled vector of 2nd & 3rd tokens, the second to last layer predicts the pooled vec of 2&3 by cross-attending to pool of 4thru7, etc.
 - [x] *figure out if i've got an information leak*
     - [x] disable kv cache for certain self-attention layers to prevent info leak
 - [x] cross-attention mechanism
     - [x] combine self-attention & cross-attention into one module
 - [x] pooling mechanisms (sum, max, plus, linear, norm, etc)
-	- [ ] make pooling choosable thru config
+	- [x] make pooling choosable thru config
     - [ ] figure out how to make queries in `SelfAttentionPooling` input-dependent
     - [ ] it might be smart to find more ways to reduce parameter counts by weight tying. for example, instead of creating many separate pooling modules we can just create one pooling module capable of handling the max length and then when lesser lengths go in they just don't use the entire module. however those earlier weight matrices would now have to very different tasks, some involving compression of a few near term tokens and some of many far term tokens, which i don't think would be conducive to a good learning environment, so maybe drop the idea?
-- [ ] figure out BCELoss
-- [ ] forward.train function
-- [ ] forward.inference function
-- [ ] edit `generate()` function to pass through future predictions? or does this go into the main model?
+- [x] figure out BCELoss
+- [x] forward.train function
+- [x] forward.inference function
+- [ ] fix kv caching lost vectors in later layers
+- [ ] in model.py move things into their own functions for readability
+- [ ] find a better way to assert max future sight lookahead
 - [ ] train model(s)
 
 ### potential future TODOs

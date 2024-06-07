@@ -10,17 +10,18 @@ class ModelConfig:
     Yes I know dropout_rate should probably be in TrainConfig but it was easier to implement from here
     """
     # general hyperparameters
-    dim: int = 96
+    dim: int = 32
     device: str = 'cuda' if torch.cuda.is_available() else 'cpu' # can't do MPS bc metal doesn't support complex64 used in RoPE
-    dropout_rate = 0.1 # percent of neurons to set to 0 during training as a way of adding randomness & improving generalization
+    dropout_rate: float = 0.1 # percent of neurons to set to 0 during training as a way of adding randomness & improving generalization
+    weight_tying: bool = True # whether to share weights between embed & final output projection
 
     # tokenizer
-    tokenizer: str = 'bpe_v1' # must choose from one of the folders in 'tokenizers/'. current options: 'bpe_v1', 'bpe_v2'
+    tokenizer: str = 'bpe_v2' # must choose from one of the folders in 'tokenizers/'. current options: 'bpe_v1', 'bpe_v2'
     vocab_len: int = 1024 # options assuming 'bpe' are 95 (character-wise), 128, 256, 512, 1024, 2048, 4096, & 8192
         # ^ that number does not include the three tokens bos, eos, and pad
 
     # Residual Layers
-    num_layers: int = 5 # small models should err on the side of many many layers at the expense of attention & mlp sizes
+    num_layers: int = 6 # small models should err on the side of many many layers at the expense of attention & mlp sizes
     second_resid_norm: bool = False # True adds an extra Norm after the attn & MLP, like in Grok. Only recommended if using RMSNorm
     
     # Multi-Layer Perceptrion
@@ -31,7 +32,7 @@ class ModelConfig:
         # ^ if mlp_gated == True, mlp_hidden_mult will automatically adjust to maintain parameter count
 
     # Self-Attention
-    num_q_heads: int = 3 # `num_q_heads % num_kv_heads == 0` must be true
+    num_q_heads: int = 2 # `num_q_heads % num_kv_heads == 0` must be true
     num_kv_heads: int = 1 # set =num_q_heads to revert to regular multi-head attention (not recommended)
     head_dim: int = dim // num_q_heads # most common choices are 32, 64 and especially 128 bc those are what works with FlashAttention
     theta: float = 10_000 # 10_000 is the most common choice. Llama3 uses 50_000
@@ -70,11 +71,14 @@ class ModelConfig:
         # (compress_freq=='poly')&(compress_freq_n==1.2) -> y=(x+1)**n
             # for n=2, 1st gets 1 vector, 2nd gets 4, 3rd gets 9, 4th gets 25, 5th gets 36, 6th gets 49, etc 
 
-    # Future Sight
-    fs_mult_factor: int = 4 # sequence length of first set of future vectors to be pooled & the mult factor of each successive larger future time chunk
+    # Future Sight (other)
+    fs_mult: int = 4 # sequence length of first set of future vectors to be pooled & the mult factor of each successive larger future time chunk
     fs_periods: int = 3 # maximum number of future chunks to look at
-        # for fs_mult_factor=2 and fs_periods=6, we've got chunk sizes 2,4,8,16,32,64 for a total of 126 future-sight tokens beyond the 1 NTP token
-        # for fs_mult_factor=4 and fs_periods=3, we've got chunk sizes 4,16,64 for a total of 84 future-sight tokens beyond the 1 NTP token
+        # for fs_mult=2 and fs_periods=6, we've got chunk sizes 2,4,8,16,32,64 for a total of 126 future-sight tokens beyond the 1 NTP token
+        # for fs_mult=4 and fs_periods=3, we've got chunk sizes 4,16,64 for a total of 84 future-sight tokens beyond the 1 NTP token
+    fs_loss_lambda: float = 1.0 # parameter to adjust weight of loss of future sight outputs relative to NTP output
+        # NTP output will always be un-weighted & weighting is geometric decay
+        # for ex: if fs_loss_lambda = 0.9 then the NTP loss will be multiplied by 1.0, the first fs by 0.9, the second by 0.81, third by 0.729, etc
 
     # inference (kv caching)
     max_batch_size: int = 1 # i haven't tried changing this from 1
@@ -82,7 +86,7 @@ class ModelConfig:
     # i think batched inference is probably broken rn bc of my shitty tokenizer. might fix in future
     
     def __post_init__(self):
-        assert self.max_seq_len >= sum([self.fs_mult_factor ** i for i in range(self.fs_periods)]), \
+        assert self.max_seq_len >= sum([self.fs_mult ** i for i in range(self.fs_periods)]), \
             f'future sight prediction chunks cannot be longer than max_seq_len'
         assert self.num_layers > 1 + self.fs_periods, \
             f'num_layers={self.num_layers} must be greater than (1+self.fs_periods)={2+self.fs_periods}'

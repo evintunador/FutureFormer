@@ -6,7 +6,7 @@ from typing import Optional
 
 from modules.logging import LoggingModule, log_io
 from modules.norm import Norm
-from modules.mqa import MQA
+from modules.mqa import MQA, futureSightMQA
 from modules.mlp import MLP
 
 class Layer(LoggingModule):
@@ -29,12 +29,12 @@ class Layer(LoggingModule):
         if self.second_norm: 
             self.post_self_attn_norm = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
 
-        # cross-attention connection
-        self.cross_attn_bool = cross_attn
+        # future sight connection
+        self.cross_attn = cross_attn
         if cross_attn:
-            self.pre_cross_attn_norm_x = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
-            self.pre_cross_attn_norm_y = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
-            self.cross_attn = MQA(
+            self.pre_future_sight_norm_x = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
+            self.pre_future_sight_norm_y = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
+            self.future_sight = futureSightMQA(
                 cfg.dim, cfg.ca_head_dim, 
                 cfg.ca_num_q_heads, cfg.ca_num_kv_heads, 
                 cfg.max_seq_len, 
@@ -42,7 +42,7 @@ class Layer(LoggingModule):
                 device = cfg.device
             )
             if self.second_norm: 
-                self.post_cross_attn_norm = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
+                self.post_future_sight_norm = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
 
         # feedforward connection
         self.pre_mlp_norm = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps) 
@@ -67,10 +67,12 @@ class Layer(LoggingModule):
         training = False,
     ) -> torch.Tensor:
         x = x + self.self_attn_connect(x, freqs_cis, mask, cache_len, training)
-        if self.cross_attn_bool & (y is not None):
-            x = x + self.cross_attn_connect(x, y, training)
-        elif self.cross_attn_bool & (y is None):
+        if self.cross_attn & (y is not None):
+            x = x + self.future_sight_connect(x, y, training)
+        elif self.cross_attn & (y is None):
             raise InputError(f'Vectors to cross-attend to expected in layer {self.i}, but none were inputted')
+        elif (not self.cross_attn) & (y is not None):
+            raise InputError(f'Vectors to cross-attend to provided to layer {self.i}, but none were expected')
         x = x + self.mlp_connect(x, training)
         return x
 
@@ -84,18 +86,18 @@ class Layer(LoggingModule):
         training: bool
     ) -> torch.Tensor:
         x = self.pre_self_attn_norm(x)
-        dx = self.self_attn(x, x, x, freqs_cis, mask, cache_len, training)
+        dx = self.self_attn(x, x, x, freqs_cis, mask, cache_len, training) # the 3 x's are for q, k, & v bc the module supports cross-attention
         if training: F.dropout(dx, self.dropout_rate)
         if self.second_norm: dx = self.post_self_attn_norm(dx)
         return dx
 
     @log_io
-    def cross_attn_connect(self, x: torch.Tensor, y: torch.Tensor, training: bool) -> torch.Tensor:
-        x = self.pre_cross_attn_norm_x(x)
-        y = self.pre_cross_attn_norm_y(y)
-        dx = self.cross_attn(x, y, y, training=training)
+    def future_sight_connect(self, x: torch.Tensor, y: torch.Tensor, training: bool) -> torch.Tensor:
+        x = self.pre_future_sight_norm_x(x)
+        y = self.pre_future_sight_norm_y(y)
+        dx = self.future_sight(x, y, training)
         if training: F.dropout(dx, self.dropout_rate)
-        if self.second_norm: dx = self.post_cross_attn_norm(dx)
+        if self.second_norm: dx = self.post_future_sight_norm(dx)
         return dx
 
     @log_io

@@ -42,10 +42,10 @@ class MQA(LoggingModule):
         self.head_dim = dim // num_q_heads if head_dim is None else head_dim
         self.dropout_rate = dropout_rate
 
-        self.Wq = nn.Linear(dim, num_q_heads * head_dim, bias=False)
-        self.Wk = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False)
-        self.Wv = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False)
-        self.Wo = nn.Linear(num_q_heads * head_dim, dim, bias=False)
+        self.Wq = nn.Linear(dim, num_q_heads * head_dim, bias=False).to(device)
+        self.Wk = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False).to(device)
+        self.Wv = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False).to(device)
+        self.Wo = nn.Linear(num_q_heads * head_dim, dim, bias=False).to(device)
 
         # various layers wil not be able to use kv caching to prevent information leakage
         self.kv_cache = True if max_batch_size is not None else False
@@ -73,6 +73,7 @@ class MQA(LoggingModule):
         assert q.shape[2] == k.shape[2] == v.shape[2]
         batch_size, seq_len_q, _ = q.shape
         seq_len_kv = k.shape[1]
+        
         q, k, v = self.Wq(q), self.Wk(k), self.Wv(v)
 
         q = q.view(batch_size, seq_len_q, self.num_q_heads, self.head_dim)
@@ -93,7 +94,7 @@ class MQA(LoggingModule):
 
         # adjusts keys and values to match the query heads count.
         if self.num_kv_heads != self.num_q_heads:
-            keys, values = self.match_headcount(k, v) # 2x (batch_size, cache_len + seq_len_kv, num_q_heads, head_dim)
+            k, v = self.match_headcount(k, v) # (batch_size, cache_len + seq_len_kv, num_q_heads, head_dim)
 
         q = q.transpose(1, 2)  # (batch_size, num_q_heads, seq_len_q, head_dim)
         k = k.transpose(1, 2)  # (batch_size, num_q_heads, cache_len + seq_len_kv, head_dim)
@@ -128,16 +129,95 @@ class MQA(LoggingModule):
     def match_headcount(self, k: torch.Tensor, v: torch.Tensor) -> (torch.Tensor, torch.Tensor):
         k = torch.repeat_interleave(k, self.num_q_heads // self.num_kv_heads, dim=2)
         v = torch.repeat_interleave(v, self.num_q_heads // self.num_kv_heads, dim=2)
-        return k, v
+        return k, v # (batch_size, cache_len + seq_len_kv, num_q_heads, head_dim)
 
     @log_io
     def attend(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
-        return (q @ k.transpose(2, 3)) * (self.head_dim ** -0.5)
+        k = k.transpose(2, 3)  # (batch_size, num_q_heads, head_dim, cache_len + seq_len_kv)
+        return (q @ k) * (self.head_dim ** -0.5) # (batch_size, num_q_heads, seq_len_q, cache_len + seq_len_kv)
     
     @log_io
     def calc_output(self, logits: torch.Tensor, v: torch.Tensor, training: bool) -> torch.Tensor:
         batch_size, _, seq_len_q, _ = logits.shape # (batch_size, n_heads, seq_len_q, seq_len_kv)
-        scores = F.softmax(logits, dim=-1)
+        scores = F.softmax(logits, dim=-1) # (batch_size, n_heads, seq_len_q, seq_len_kv)
         if training: scores = F.dropout(scores, self.dropout_rate)
         output = scores @ v # (batch_size, n_heads, seq_len_q, head_dim)
         return output.transpose(1, 2).contiguous().view(batch_size, seq_len_q, -1) # (batch_size, seq_len_q, n_heads * head_dim)
+        
+class futureSightMQA(LoggingModule):
+    """
+    like the above except designed for the k&v being cross-attended to to have shape (batch_size, seq_len, pool_seq_len, dim)
+    """
+    def __init__(
+        self, 
+        dim: int,
+        head_dim: int,
+        num_q_heads: int,
+        num_kv_heads: int,
+        max_seq_len: int,
+        dropout_rate: float = 0.1,
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    ):
+        super().__init__()
+        self.num_q_heads = num_q_heads
+        self.num_kv_heads = num_q_heads if num_kv_heads is None else num_kv_heads
+        assert num_q_heads % num_kv_heads == 0, f'num_q_heads must be divisible by num_kv_heads'
+        self.head_dim = dim // num_q_heads if head_dim is None else head_dim
+        self.dropout_rate = dropout_rate
+
+        self.Wq = nn.Linear(dim, num_q_heads * head_dim, bias=False).to(device)
+        self.Wk = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False).to(device)
+        self.Wv = nn.Linear(dim, self.num_kv_heads * head_dim, bias=False).to(device)
+        self.Wo = nn.Linear(num_q_heads * head_dim, dim, bias=False).to(device)
+    
+    @log_io
+    def forward(
+        self,
+        q: torch.Tensor, # (batch_size, seq_len, dim)
+        kv: torch.Tensor, # k & v are (batch_size, seq_len, seq_len_fs, dim)
+        training: bool = False,
+    ) -> torch.Tensor:
+        assert q.shape[0] == kv.shape[0] # batch_size
+        assert q.shape[1] == kv.shape[1] # seq_len
+        assert q.shape[2] == kv.shape[3] # dim
+        batch_size, seq_len, _ = q.shape
+        seq_len_fs = kv.shape[2]
+        
+        q, k, v = self.Wq(q), self.Wk(kv), self.Wv(kv)
+
+        q = q.view(batch_size*seq_len, 1, self.num_q_heads, self.head_dim)
+        k = k.view(batch_size*seq_len, seq_len_fs, self.num_kv_heads, self.head_dim)
+        v = v.view(batch_size*seq_len, seq_len_fs, self.num_kv_heads, self.head_dim)
+
+        # adjusts keys and values to match the query heads count.
+        if self.num_kv_heads != self.num_q_heads:
+            k, v = self.match_headcount(k, v) # (batch_size*seq_len, seq_len_fs, num_q_heads, head_dim)
+
+        q = q.transpose(1, 2)  # (batch_size*seq_len, num_q_heads, 1, head_dim)
+        k = k.transpose(1, 2)  # (batch_size*seq_len, num_q_heads, seq_len_fs, head_dim)
+        v = v.transpose(1, 2)  # (batch_size*seq_len, num_q_heads, seq_len_fs, head_dim)
+        
+        logits = self.attend(q, k) # (batch_size*seq_len, num_q_heads, 1, seq_len_fs)
+        scores = self.calc_output(logits, v, training) # (batch_size*seq_len, 1, n_heads * head_dim)
+        
+        output = self.Wo(scores) # (batch_size*seq_len, 1, dim)
+        return output.view(batch_size, seq_len, -1) # (batch_size, seq_len, dim)
+
+    @log_io
+    def match_headcount(self, k: torch.Tensor, v: torch.Tensor) -> (torch.Tensor, torch.Tensor):
+        k = torch.repeat_interleave(k, self.num_q_heads // self.num_kv_heads, dim=2)
+        v = torch.repeat_interleave(v, self.num_q_heads // self.num_kv_heads, dim=2)
+        return k, v # (batch_size*seq_len, seq_len_fs, num_q_heads, head_dim)
+
+    @log_io
+    def attend(self, q: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
+        k = k.transpose(2, 3) # (batch_size*seq_len, num_q_heads, head_dim, seq_len_fs)
+        return (q @ k) * (self.head_dim ** -0.5) # (batch_size*seq_len, num_q_heads, 1, seq_len_fs)
+    
+    @log_io
+    def calc_output(self, logits: torch.Tensor, v: torch.Tensor, training: bool) -> torch.Tensor:
+        bs_x_sl, _, seq_len_q, seq_len_fs = logits.shape # (batch_size*seq_len, n_heads, 1, seq_len_fs)
+        scores = F.softmax(logits, dim=-1) # (batch_size*seq_len, n_heads, 1, seq_len_fs)
+        if training: scores = F.dropout(scores, self.dropout_rate)
+        output = scores @ v # (batch_size*seq_len, n_heads, 1, head_dim)
+        return output.transpose(1, 2).contiguous().view(bs_x_sl, 1, -1) # (batch_size*seq_len, 1, n_heads * head_dim)
