@@ -9,7 +9,7 @@ from modules.norm import Norm
 from modules.mqa import precompute_freqs_cis
 from modules.layer import Layer
 from modules.loss import splice_future_indices, create_multi_hot_vector
-from modules.pool_ops import *
+from modules.pool_ops import PoolingHub
 
 class Model(LoggingModule):
     def __init__(self, cfg):
@@ -40,48 +40,19 @@ class Model(LoggingModule):
             Layer(cfg, i = cfg.num_layers - cfg.fs_periods + 1 + i, cross_attn = True, kv_cache = False
                  ) for i in range(cfg.fs_periods - 1))
 
-        ### the pooling mechanism for future vectors
-        # schedule determines how many vectors the pooling mechanism should to compress into
-        self.scheddy = CompressionSchedule(cfg.compress_freq, cfg.compress_freq_n)
+        ### Pooling
         # optional norm before pooling
         if cfg.pre_pool_norm: self.pre_pool_norm = Norm(cfg.dim, cfg.norm_type, cfg.norm_affine, cfg.norm_bias, cfg.eps)
-        # selecting your choice of pooling mechanisms. chances are you only need to look at 'sum'
-        if cfg.pool_type == 'sum': # sum and max are only lists bc the rest of the options need lists
-            self.pooler_list = nn.ModuleList(SumPooling() for _ in range(cfg.fs_periods)) 
-        elif cfg.pool_type == 'max':
-            self.pooler_list = nn.ModuleList(MaxPooling() for _ in range(cfg.fs_periods))
-        elif cfg.pool_type == 'parametric_sum':
-            self.pooler_list = nn.ModuleList(ParametricSumPooling(dim = cfg.dim, 
-                                                                output_seq_len = self.scheddy(cfg.fs_periods - 1 - i), 
-                                                                use_output_linear = cfg.pool_output_linear
-                                                               ) for i in range(cfg.fs_periods))
-        elif cfg.pool_type == 'parametric_max':
-            self.pooler_list = nn.ModuleList(ParametricMaxPooling(dim = cfg.dim, 
-                                                                output_seq_len = self.scheddy(cfg.fs_periods - 1 - i), 
-                                                                use_output_linear = cfg.pool_output_linear
-                                                               ) for i in range(cfg.fs_periods))
-        elif cfg.pool_type == 'flatten':
-            self.pooler_list = nn.ModuleList(FlattenProjectionPooling(to_be_pooled_seq_len = cfg.fs_mult ** (cfg.fs_periods - i),
-                                                                    dim = cfg.dim, 
-                                                                    output_seq_len = self.scheddy(cfg.fs_periods - 1 - i)
-                                                                   ) for i in range(cfg.fs_periods))
-        elif cfg.pool_type == 'conv':
-            self.pooler_list = nn.ModuleList(ConvPooling(to_be_pooled_seq_len = cfg.fs_mult ** (cfg.fs_periods - i),
-                                                       dim = cfg.dim, 
-                                                       output_seq_len = self.scheddy(cfg.fs_periods - 1 - i),
-                                                       use_output_linear = cfg.pool_output_linear
-                                                      ) for i in range(cfg.fs_periods))
-        elif cfg.pool_type == 'attention':
-            self.pooler_list = nn.ModuleList(AttentionPooling(dim = cfg.dim, 
-                                                            output_seq_len = self.scheddy(cfg.fs_periods - 1 - i),
-                                                            use_output_linear = cfg.pool_output_linear
-                                                           ) for i in range(cfg.fs_periods))
-        elif cfg.pool_type == 'self_attention': # TODO: fix self-attention pooling to make queries actually input-dependent
-            self.pooler_list = nn.ModuleList(SelfAttentionPooling(dim = cfg.dim, 
-                                                                output_seq_len = self.scheddy(cfg.fs_periods - 1 - i)
-                                                               ) for i in range(cfg.fs_periods))
-        else:
-            raise InputError(f'pool_type {cfg.pool_type} unrecognized')
+        # an object full of the pooling modules for each fs level
+        self.pooler = PoolingHub(
+            cfg.compress_freq, 
+            cfg.compress_freq_n, 
+            cfg.pool_type,
+            cfg.dim,
+            cfg.fs_mult,
+            cfg.fs_periods,
+            cfg.pool_output_linear
+        )
 
         ### the model's output projection(s)
         self.output_projection = nn.Sequential(
@@ -107,34 +78,34 @@ class Model(LoggingModule):
     @log_io
     def forward(
         self, 
-        inputs: torch.Tensor, 
+        input_token_ids: torch.Tensor, 
         cache_len: int = 0, 
-        targets: Optional[torch.Tensor] = None
+        target_token_ids: Optional[torch.Tensor] = None
     ) -> (torch.Tensor, torch.Tensor):
-        return self.forward_inference(inputs, cache_len) if targets is None else self.forward_train(inputs, targets)
+        return self.forward_inference(input_token_ids, cache_len) if target_token_ids is None else self.forward_train(input_token_ids, target_token_ids)
 
     @log_io
-    def forward_train(self, inputs: torch.Tensor, targets: torch.Tensor) -> (torch.Tensor, torch.Tensor):
-        inputs, targets = inputs.to(self.device), targets.to(self.device) # ensure correct device
-        batch_size, max_seq_len = inputs.shape
-        assert inputs.shape == targets.shape
+    def forward_train(self, input_token_ids: torch.Tensor, target_token_ids: torch.Tensor) -> (torch.Tensor, torch.Tensor):
+        input_token_ids, target_token_ids = input_token_ids.to(self.device), target_token_ids.to(self.device) # ensure correct device
+        batch_size, max_seq_len = input_token_ids.shape
+        assert input_token_ids.shape == target_token_ids.shape
         assert max_seq_len == self.max_seq_len
         mask, freqs_cis = self.mask, self.freqs_cis
-
+        
         ### setting up Future Sight
         # the subset of the targets we'll have our Future Sight mechanism 1) train on and 2) embed then pool then pay attention to
-        future_targets = splice_future_indices(targets, 
+        future_targets = splice_future_indices(target_token_ids, 
                                                padding_token = self.vocab_len - 1, 
                                                mult_factor = self.fs_mult, 
                                                max_iter = self.fs_periods)
             # [fs_periods x (batch_size, max_seq_len, fs_mult ** i)]
             # order is further-in-the-future to less-far-in-the-future
         # for now we'll assume a sum pooling module and figure out how to make it configurable later
-        future_vecs = [self.pooler_list[i](self.pre_pool_norm(self.token_embedder(ft))) for i, ft in enumerate(future_targets)]
+        future_vecs = [self.pooler(self.pre_pool_norm(self.token_embedder(ft)), i) for i, ft in enumerate(future_targets)]
             # [fs_periods x (batch_size, max_seq_len, fs_mult**i, dim)]
-            
+        
         ### initialize first residual state and run the first few regular layers of the model
-        x = self.token_embedder(inputs) * self.scale # (batch_size, max_seq_len, dim)
+        x = self.token_embedder(input_token_ids) * self.scale # (batch_size, max_seq_len, dim)
         for layer in self.body_layers:
             x = layer(x, freqs_cis, mask, training = True) # (batch_size, max_seq_len, dim)
         # get our first Future Sight output
@@ -173,25 +144,25 @@ class Model(LoggingModule):
             else: # if we're messing with the final NTP output logits
                 ntp_loss = self.ntp_criterion(
                     logits.view(batch_size * max_seq_len, self.vocab_len),
-                    targets.reshape(batch_size * max_seq_len)
+                    target_token_ids.reshape(batch_size * max_seq_len)
                 )
                 # the final logits object will be our NTP logits so we can just return it
-                
+        
         loss = ntp_loss + fs_loss
         return logits, loss
 
     @log_io
-    def forward_inference(self, inputs: torch.Tensor, cache_len: int) -> (torch.Tensor, None):
+    def forward_inference(self, input_token_ids: torch.Tensor, cache_len: int) -> (torch.Tensor, None):
         # setup
-        inputs = inputs.to(self.device)
-        batch_size, seq_len = inputs.shape
+        input_token_ids = input_token_ids.to(self.device)
+        batch_size, seq_len = input_token_ids.shape
         assert batch_size <= self.max_batch_size # we had to initialize the kv cache to some maximum possible size
         freqs_cis = self.freqs_cis[cache_len : cache_len + seq_len]
         mask = self.mask[:seq_len, :seq_len]
         mask = torch.hstack([torch.zeros((seq_len, cache_len), device=self.device), mask])
 
         ### initialize first residual state and run the first few regular layers of the model
-        x = self.token_embedder(inputs) * self.scale # (batch_size, seq_len, dim)
+        x = self.token_embedder(input_token_ids) * self.scale # (batch_size, seq_len, dim)
         for layer in self.body_layers:
             x = layer(x, freqs_cis, mask, cache_len) # (batch_size, seq_len, dim)
         
@@ -201,7 +172,7 @@ class Model(LoggingModule):
         fs_indices = torch.topk(z, k = self.fs_mult ** self.fs_periods, dim=2).indices # (batch_size, seq_len, fs_mult ** fs_periods)
         # embed & then pool them to get the output we can cross-attend to
         fs_vecs = self.token_embedder(fs_indices) # (batch_size, seq_len, fs_mult ** fs_periods, dim)
-        y = self.pooler_list[0](self.pre_pool_norm(fs_vecs)) # (batch_size, seq_len, pooled_len, dim)
+        y = self.pooler(self.pre_pool_norm(fs_vecs), i=0) # (batch_size, seq_len, pooled_len, dim)
             # pooled_len is determined by self.scheddy
 
         ### run our unique in-between layer 
@@ -212,16 +183,16 @@ class Model(LoggingModule):
         fs_indices = torch.topk(z, k = self.fs_mult ** (self.fs_periods - 1), dim=2).indices 
             # (batch_size, seq_len, fs_mult ** (fs_periods - 1))
         fs_vecs = self.token_embedder(fs_indices) # (batch_size, seq_len, fs_mult ** (fs_periods - 1), dim)
-        y = self.pooler_list[1](self.pre_pool_norm(fs_vecs)) # (batch_size, seq_len, pooled_len, dim)
+        y = self.pooler(self.pre_pool_norm(fs_vecs), i=1) # (batch_size, seq_len, pooled_len, dim)
         
         ### loop thru remaining layers & their outputs
         for i, layer in enumerate(self.fs_layers):
             x = layer(x, freqs_cis, mask, y = y) # (batch_size, max_seq_len, dim)
             z = self.output_projection(x) # (batch_size, max_seq_len, vocab_len)
-            if i != (self.fs_layers - 1):
+            if i != (self.fs_periods - 1):
                 fs_indices = torch.topk(z, k = self.fs_mult ** (self.fs_periods - 2 - i), dim=2).indices 
                     # (batch_size, seq_len, fs_mult ** (fs_periods - 2 - i))
                 fs_vecs = self.token_embedder(fs_indices) # (batch_size, seq_len, fs_mult ** (fs_periods - 2 - i), dim)
-                y = self.pooler_list[i + 2](self.pre_pool_norm(fs_vecs)) # (batch_size, seq_len, pooled_len, dim)
+                y = self.pooler(self.pre_pool_norm(fs_vecs), i+2) # (batch_size, seq_len, pooled_len, dim)
             
         return z, None

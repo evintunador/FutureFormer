@@ -45,6 +45,7 @@ class CompressionSchedule:
     def poly(self, i: int) -> int:
         return math.floor((i+1) ** self.compress_freq_n)
 
+
 class MaxPooling(LoggingModule):
     def __init__(self):
         super().__init__()
@@ -102,7 +103,7 @@ class ParametricSumPooling(LoggingModule):
 
 
 class FlattenProjectionPooling(LoggingModule):
-    def __init__(self, to_be_pooled_seq_len, dim, output_seq_len, bias: bool = False):
+    def __init__(self, dim, to_be_pooled_seq_len, output_seq_len, bias: bool = False):
         super().__init__()
         
         self.projections = nn.ModuleList([
@@ -119,7 +120,7 @@ class FlattenProjectionPooling(LoggingModule):
 
 
 class ConvPooling(LoggingModule):
-    def __init__(self, to_be_pooled_seq_len, dim, output_seq_len, use_output_linear: bool = False, bias: bool = False):
+    def __init__(self, dim, to_be_pooled_seq_len, output_seq_len, use_output_linear: bool = False, bias: bool = False):
         super().__init__()
         self.convs = nn.ModuleList([
             nn.Conv1d(in_channels=dim, out_channels=dim, kernel_size=to_be_pooled_seq_len, bias=bias)
@@ -192,3 +193,61 @@ class SelfAttentionPooling(LoggingModule): # TODO: figure out how to make querie
         pooled = torch.bmm(attn_weights, values)  # (batch_size*max_seq_len, output_seq_len, dim)
         
         return pooled.view(batch_size, max_seq_len, -1, dim)
+
+
+class PoolingHub(LoggingModule):
+    def __init__(
+        self, 
+        compress_freq: int,
+        compress_freq_n: int,
+        pool_type: str,
+        dim: int,
+        fs_mult,
+        fs_periods: int,
+        output_linear: bool
+    ):
+        super().__init__()
+
+        # schedule determines how many vectors the pooling mechanism should to compress into
+        self.scheddy = CompressionSchedule(compress_freq, compress_freq_n)
+
+        ### selecting your choice of pooling mechanisms
+        self.pool_type = pool_type
+        if pool_type == 'sum': self.pooler = SumPooling()
+        elif pool_type == 'max': self.pooler = MaxPooling()
+        elif pool_type == 'parametric_sum':
+            self.pooler_list = nn.ModuleList(ParametricSumPooling(dim = dim, 
+                                                                output_seq_len = self.scheddy(fs_periods - 1 - i), 
+                                                                use_output_linear = pool_output_linear
+                                                               ) for i in range(fs_periods))
+        elif pool_type == 'parametric_max':
+            self.pooler_list = nn.ModuleList(ParametricMaxPooling(dim = dim, 
+                                                                output_seq_len = self.scheddy(fs_periods - 1 - i), 
+                                                                use_output_linear = pool_output_linear
+                                                               ) for i in range(fs_periods))
+        elif pool_type == 'flatten':
+            self.pooler_list = nn.ModuleList(FlattenProjectionPooling(dim = dim, 
+                                                                    to_be_pooled_seq_len = fs_mult ** (fs_periods - i),
+                                                                    output_seq_len = self.scheddy(fs_periods - 1 - i)
+                                                                   ) for i in range(fs_periods))
+        elif pool_type == 'conv':
+            self.pooler_list = nn.ModuleList(ConvPooling(dim = dim, 
+                                                       to_be_pooled_seq_len = fs_mult ** (fs_periods - i),
+                                                       output_seq_len = self.scheddy(fs_periods - 1 - i),
+                                                       use_output_linear = pool_output_linear
+                                                      ) for i in range(fs_periods))
+        elif pool_type == 'attention':
+            self.pooler_list = nn.ModuleList(AttentionPooling(dim = dim, 
+                                                            output_seq_len = self.scheddy(fs_periods - 1 - i),
+                                                            use_output_linear = pool_output_linear
+                                                           ) for i in range(fs_periods))
+        elif pool_type == 'self_attention': # TODO: fix self-attention pooling to make queries actually input-dependent
+            self.pooler_list = nn.ModuleList(SelfAttentionPooling(dim = dim, 
+                                                                output_seq_len = self.scheddy(fs_periods - 1 - i)
+                                                               ) for i in range(fs_periods))
+        else:
+            raise InputError(f'pool_type {pool_type} unrecognized')
+
+    @log_io
+    def forward(self, x: torch.Tensor, i: int) -> torch.Tensor:
+        return  self.pooler(x) if self.pool_type in ['sum', 'max'] else self.pooler_list[i](x)

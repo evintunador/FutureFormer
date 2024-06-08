@@ -47,9 +47,10 @@ def generate(
     vocab_len = tokenizer.vocab_len
     max_seq_len = model.max_seq_len
     assert ((memory_saver_div & (memory_saver_div-1)) == 0) & (memory_saver_div > 0), f'memory_saver_div {memory_saver_div} must be power of 2'
-    max_context_window = max_seq_len // memory_saver_div
+    max_context_window = max_seq_len# // memory_saver_div # TODO: switch back when i bring back kv caching
     if memory_saver_div != 1:
-        print(f'maximum attention matrix size in memory will be {max_context_window}x{max_seq_len} rather than {max_seq_len}x{max_seq_len}\n')
+        #print(f'maximum attention matrix size in memory will be {max_context_window}x{max_seq_len} rather than {max_seq_len}x{max_seq_len}\n')
+        print(f'memory_saver_div is being ignored under current implementation. kv caching will not occur\n')
     if top_k is None:
         top_k = tokenizer.vocab_len
 
@@ -58,7 +59,8 @@ def generate(
     tokens = torch.tensor([tokens], device=model.device).to(torch.long)
     assert tokens.shape[0] == 1, f'batched inference is not currently supported.'
 
-    cache_len = max(tokens.shape[1] - max_context_window, 0)
+    #cache_len = max(tokens.shape[1] - max_context_window, 0)
+    cache_len = 0 # TODO: switch back when i bring back kv caching
     for i in range(max_gen_len):
         with torch.no_grad():
             logits, _ = model(tokens[:,-max_context_window:], cache_len)
@@ -72,7 +74,8 @@ def generate(
         tokens = torch.cat([tokens, next_token], dim=-1)
 
         # update our kv cache length
-        if tokens.shape[1] >= max_context_window:
-            cache_len += 1
+        #if tokens.shape[1] >= max_context_window:
+        #    cache_len += 1
+        # TODO: switch back when i bring back kv caching
     
     return tokenizer.decode(tokens.squeeze(0).tolist())

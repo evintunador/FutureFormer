@@ -36,7 +36,7 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
     - `bpe_v2`: a slightly updated version of the one above that uses GPT4's regex instead of my own shitty from-scratch rules. Not currently implemented in any models
         - `...`
 - `trained/`
-    - `FutureFormer_?m_?/`: none yet currently trained, but this folder will get created eventually
+    - `untrained_test_0.1m/`: an untrained 0.1m parameter model meant for testing purposes
         - `model_config.json`: hyperparameters of the model
         - `model.pth`: weights of the model
         - `train_config.json`: hyperparameters of the training loop used
@@ -65,11 +65,15 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
     - [ ] it might be smart to find more ways to reduce parameter counts by weight tying. for example, instead of creating many separate pooling modules we can just create one pooling module capable of handling the max length and then when lesser lengths go in they just don't use the entire module. however those earlier weight matrices would now have to very different tasks, some involving compression of a few near term tokens and some of many far term tokens, which i don't think would be conducive to a good learning environment, so maybe drop the idea?
 - [x] figure out BCELoss
 - [x] forward.train function
+- [x] implement a hyperparameter to de-prioritize fs loss
 - [x] forward.inference function
-- [ ] fix kv caching lost vectors in later layers
-- [ ] in model.py move things into their own functions for readability
+- [ ] ~~fix kv caching lost vectors in later layers~~
+    - [x] temporarily disable kv caching bc i'm lazy
+    - [ ] eventually bring back kv caching if this model does well. honestly it's such a simple fix i'm just lazy
+- [x] in model.py move pooling choice into its own function for readability
+- [ ] put more stuff into loss.py? it's pretty sparse
 - [ ] find a better way to assert max future sight lookahead
-- [ ] train model(s)
+- [ ] train an initial attempt
 
 ### potential future TODOs
 - [ ] should i set cross-attention hyperparameters different from self-attention? fewer heads?
