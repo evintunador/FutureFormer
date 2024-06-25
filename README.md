@@ -74,6 +74,7 @@ This repo is built off of [templateGPT](https://github.com/evintunador/templateG
 - [ ] put more stuff into loss.py? it's pretty sparse
 - [ ] find a better way to assert max future sight lookahead
 - [ ] train an initial attempt
+- [ ] make new code take better advantage of `LoggingModule`
 
 ### potential future TODOs
 - [ ] should i set cross-attention hyperparameters different from self-attention? fewer heads?

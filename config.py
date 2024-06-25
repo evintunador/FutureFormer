@@ -10,7 +10,7 @@ class ModelConfig:
     Yes I know dropout_rate should probably be in TrainConfig but it was easier to implement from here
     """
     # general hyperparameters
-    dim: int = 32
+    dim: int = 96
     device: str = 'cuda' if torch.cuda.is_available() else 'cpu' # can't do MPS bc metal doesn't support complex64 used in RoPE
     dropout_rate: float = 0.1 # percent of neurons to set to 0 during training as a way of adding randomness & improving generalization
     weight_tying: bool = True # whether to share weights between embed & final output projection
@@ -36,7 +36,7 @@ class ModelConfig:
     num_kv_heads: int = 1 # set =num_q_heads to revert to regular multi-head attention (not recommended)
     head_dim: int = dim // num_q_heads # most common choices are 32, 64 and especially 128 bc those are what works with FlashAttention
     theta: float = 10_000 # 10_000 is the most common choice. Llama3 uses 50_000
-    max_seq_len: int = 128 # 512 is the most my 8gb of ram can handle
+    max_seq_len: int = 512 # 512 is the most my 8gb of ram can handle
 
     # Cross-Attention
     ca_num_q_heads: int = num_q_heads # is it worth messing around with cross-attention's parameters?
@@ -72,7 +72,7 @@ class ModelConfig:
             # for n=2, 1st gets 1 vector, 2nd gets 4, 3rd gets 9, 4th gets 25, 5th gets 36, 6th gets 49, etc 
 
     # Future Sight (other)
-    fs_mult: int = 4 # sequence length of first set of future vectors to be pooled & the mult factor of each successive larger future time chunk
+    fs_mult: int = 3 # sequence length of first set of future vectors to be pooled & the mult factor of each successive larger future time chunk
     fs_periods: int = 3 # maximum number of future chunks to look at
         # for fs_mult=2 and fs_periods=6, we've got chunk sizes 2,4,8,16,32,64 for a total of 126 future-sight tokens beyond the 1 NTP token
         # for fs_mult=4 and fs_periods=3, we've got chunk sizes 4,16,64 for a total of 84 future-sight tokens beyond the 1 NTP token
@@ -103,9 +103,9 @@ class TrainConfig:
     batch_size: int = 32
     
     # total number of batches to run over the course of training
-    max_iters: int = 20 # i recommend at least 1_000
+    max_iters: int = 2_000 # i recommend at least 1_000
     # how often to print out an update on how training is going
-    eval_interval: int = max_iters // 10 # doing this too often slows things down hella but also gives detailed log data
+    eval_interval: int = max_iters // 100 # doing this too often slows things down hella but also gives detailed log data
     # how many samples to take at each evaluation. more means a more accurate loss/perplexity calculation
     eval_samples: int = 1 # this number can slow things down. each sample is almost like doing an extra training iteration
     # how often to save a model checkpoint
